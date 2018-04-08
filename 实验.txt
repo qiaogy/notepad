@@ -1,0 +1,148 @@
+import socketserver
+import time
+
+#size = 14480 # 10*MSS
+size = 14481 # 10*MSS + 1
+
+class MyServer(socketserver.BaseRequestHandler):
+    def handle(self):
+        while True:
+            try:
+                self.request.sendall(bytes(str(size), encoding='utf8'))
+                ack = self.request.recv(1024).decode()
+
+                if ack == 'ack':
+                    response = b'q'*size
+                    self.request.sendall(response)
+                    if not self.request.recv(1024):
+                        raise Exception('client closed')
+            except Exception as ex:
+                print(ex.__str__())
+                self.request.close()
+                break
+
+
+if __name__ == '__main__':
+    host, port = '10.0.0.129', 9999
+    socketserver.TCPServer.allow_reuse_address = True
+    server = socketserver.ThreadingTCPServer((host, port), MyServer)
+    server.serve_forever()
+
+    
+clinet：
+import socket
+
+host, port = '10.0.0.129', 9999
+sk = socket.socket()
+sk.connect((host, port))
+
+while True:
+    try:
+        size = sk.recv(1024).decode()
+        sk.sendall(bytes('ack', encoding='utf8'))
+
+        recv_size = 0
+        recv_data = b''
+        while recv_size < int(size):
+            buf = sk.recv(1024)
+            recv_data += buf
+            recv_size += len(buf)
+
+        print('send_size:{}  recv_size:{}'.format(size, recv_size)
+        break
+    except Exception as ex:
+        print(ex.__str__())
+        sk.close()
+        break
+
+sk.close()
+
+
+################################################
+若发送数据小于等于14480，则一次性发送
+
+
+16:25:08.829177 IP 10.0.0.128.54036 > 10.0.0.129.9999: Flags [S], seq 3086501981, win 29200, options [mss 1460,sackOK,TS val 4212825 ecr 0,nop,wscale 7], length 0
+16:25:08.829393 IP 10.0.0.129.9999 > 10.0.0.128.54036: Flags [S.], seq 2184114238, ack 3086501982, win 28960, options [mss 1460,sackOK,TS val 4208226 ecr 4212825,nop,wscale 7], length 0
+16:25:08.829427 IP 10.0.0.128.54036 > 10.0.0.129.9999: Flags [.], ack 1, win 229, options [nop,nop,TS val 4212825 ecr 4208226], length 0
+
+16:25:08.830450 IP 10.0.0.129.9999 > 10.0.0.128.54036: Flags [P.], seq 1:6, ack 1, win 227, options [nop,nop,TS val 4208227 ecr 4212825], length 5
+16:25:08.830506 IP 10.0.0.128.54036 > 10.0.0.129.9999: Flags [.], ack 6, win 229, options [nop,nop,TS val 4212826 ecr 4208227], length 0
+16:25:08.830563 IP 10.0.0.128.54036 > 10.0.0.129.9999: Flags [P.], seq 1:4, ack 6, win 229, options [nop,nop,TS val 4212826 ecr 4208227], length 3
+16:25:08.830672 IP 10.0.0.129.9999 > 10.0.0.128.54036: Flags [.], ack 4, win 227, options [nop,nop,TS val 4208227 ecr 4212826], length 0
+
+16:25:08.830742 IP 10.0.0.129.9999 > 10.0.0.128.54036: Flags [P.], seq 6:14486, ack 4, win 227, options [nop,nop,TS val 4208227 ecr 4212826], length 14480
+16:25:08.830807 IP 10.0.0.128.54036 > 10.0.0.129.9999: Flags [.], ack 14486, win 455, options [nop,nop,TS val 4212827 ecr 4208227], length 0
+
+16:25:08.830938 IP 10.0.0.128.54036 > 10.0.0.129.9999: Flags [F.], seq 4, ack 14486, win 455, options [nop,nop,TS val 4212827 ecr 4208227], length 0
+16:25:08.831136 IP 10.0.0.129.9999 > 10.0.0.128.54036: Flags [F.], seq 14486, ack 5, win 227, options [nop,nop,TS val 4208227 ecr 4212827], length 0
+16:25:08.831155 IP 10.0.0.128.54036 > 10.0.0.129.9999: Flags [.], ack 14487, win 455, options [nop,nop,TS val 4212827 ecr 4208227], length 0
+
+
+===================================================
+发送数据大于14480，分多次发送
+
+16:26:42.883227 IP 10.0.0.128.54038 > 10.0.0.129.9999: Flags [S], seq 2061167446, win 29200, options [mss 1460,sackOK,TS val 4306879 ecr 0,nop,wscale 7], length 0
+16:26:42.883524 IP 10.0.0.129.9999 > 10.0.0.128.54038: Flags [S.], seq 4021447722, ack 2061167447, win 28960, options [mss 1460,sackOK,TS val 4302280 ecr 4306879,nop,wscale 7], length 0
+16:26:42.883562 IP 10.0.0.128.54038 > 10.0.0.129.9999: Flags [.], ack 1, win 229, options [nop,nop,TS val 4306879 ecr 4302280], length 0
+
+16:26:42.888972 IP 10.0.0.129.9999 > 10.0.0.128.54038: Flags [P.], seq 1:6, ack 1, win 227, options [nop,nop,TS val 4302285 ecr 4306879], length 5
+16:26:42.889015 IP 10.0.0.128.54038 > 10.0.0.129.9999: Flags [.], ack 6, win 229, options [nop,nop,TS val 4306885 ecr 4302285], length 0
+
+16:26:42.904749 IP 10.0.0.128.54038 > 10.0.0.129.9999: Flags [P.], seq 1:4, ack 6, win 229, options [nop,nop,TS val 4306901 ecr 4302285], length 3
+16:26:42.905026 IP 10.0.0.129.9999 > 10.0.0.128.54038: Flags [.], ack 4, win 227, options [nop,nop,TS val 4302301 ecr 4306901], length 0
+2次发送
+16:26:42.905162 IP 10.0.0.129.9999 > 10.0.0.128.54038: Flags [.], seq 6:14486, ack 4, win 227, options [nop,nop,TS val 4302301 ecr 4306901], length 14480
+16:26:42.905203 IP 10.0.0.128.54038 > 10.0.0.129.9999: Flags [.], ack 14486, win 455, options [nop,nop,TS val 4306901 ecr 4302301], length 0
+16:26:42.905313 IP 10.0.0.129.9999 > 10.0.0.128.54038: Flags [P.], seq 14486:14487, ack 4, win 227, options [nop,nop,TS val 4302301 ecr 4306901], length 1
+16:26:42.905402 IP 10.0.0.128.54038 > 10.0.0.129.9999: Flags [F.], seq 4, ack 14487, win 455, options [nop,nop,TS val 4306901 ecr 4302301], length 0  # 附带ack
+
+16:26:42.905664 IP 10.0.0.129.9999 > 10.0.0.128.54038: Flags [F.], seq 14487, ack 5, win 227, options [nop,nop,TS val 4302302 ecr 4306901], length 0
+16:26:42.905674 IP 10.0.0.128.54038 > 10.0.0.129.9999: Flags [.], ack 14488, win 455, options [nop,nop,TS val 4306902 ecr 4302302], length 0
+
+
+
+==============================================
+initcwnd 11
+
+
+16:29:43.743702 IP 10.0.0.128.54042 > 10.0.0.129.9999: Flags [S], seq 1522338729, win 29200, options [mss 1460,sackOK,TS val 4487739 ecr 0,nop,wscale 7], length 0
+16:29:43.744040 IP 10.0.0.129.9999 > 10.0.0.128.54042: Flags [S.], seq 794202341, ack 1522338730, win 28960, options [mss 1460,sackOK,TS val 4483140 ecr 4487739,nop,wscale 7], length 0
+16:29:43.744062 IP 10.0.0.128.54042 > 10.0.0.129.9999: Flags [.], ack 1, win 229, options [nop,nop,TS val 4487740 ecr 4483140], length 0
+
+16:29:43.744584 IP 10.0.0.129.9999 > 10.0.0.128.54042: Flags [P.], seq 1:6, ack 1, win 227, options [nop,nop,TS val 4483141 ecr 4487740], length 5
+16:29:43.744597 IP 10.0.0.128.54042 > 10.0.0.129.9999: Flags [.], ack 6, win 229, options [nop,nop,TS val 4487740 ecr 4483141], length 0
+16:29:43.763801 IP 10.0.0.128.54042 > 10.0.0.129.9999: Flags [P.], seq 1:4, ack 6, win 229, options [nop,nop,TS val 4487760 ecr 4483141], length 3
+16:29:43.764038 IP 10.0.0.129.9999 > 10.0.0.128.54042: Flags [.], ack 4, win 227, options [nop,nop,TS val 4483160 ecr 4487760], length 0
+
+直接一次性发送14481数据
+16:29:43.764165 IP 10.0.0.129.9999 > 10.0.0.128.54042: Flags [.], seq 6:14486, ack 4, win 227, options [nop,nop,TS val 4483160 ecr 4487760], length 14480
+16:29:43.764190 IP 10.0.0.129.9999 > 10.0.0.128.54042: Flags [P.], seq 14486:14487, ack 4, win 227, options [nop,nop,TS val 4483160 ecr 4487760], length 1
+
+16:29:43.764249 IP 10.0.0.128.54042 > 10.0.0.129.9999: Flags [.], ack 14486, win 455, options [nop,nop,TS val 4487760 ecr 4483160], length 0
+16:29:43.764422 IP 10.0.0.128.54042 > 10.0.0.129.9999: Flags [F.], seq 4, ack 14487, win 455, options [nop,nop,TS val 4487760 ecr 4483160], length 0
+
+16:29:43.764665 IP 10.0.0.129.9999 > 10.0.0.128.54042: Flags [F.], seq 14487, ack 5, win 227, options [nop,nop,TS val 4483161 ecr 4487760], length 0
+16:29:43.764675 IP 10.0.0.128.54042 > 10.0.0.129.9999: Flags [.], ack 14488, win 455, options [nop,nop,TS val 4487761 ecr 4483161], length 0
+
+
+==================
+initcwnd 11,  initrwnd 22
+
+16:47:33.643698 IP 10.0.0.128.54100 > 10.0.0.129.9999: Flags [S], seq 3034867771, win 32120, options [mss 1460,sackOK,TS val 5557640 ecr 0,nop,wscale 7], length 0
+16:47:33.644073 IP 10.0.0.129.9999 > 10.0.0.128.54100: Flags [S.], seq 1782405115, ack 3034867772, win 28960, options [mss 1460,sackOK,TS val 5553040 ecr 5557640,nop,wscale 7], length 0
+16:47:33.644097 IP 10.0.0.128.54100 > 10.0.0.129.9999: Flags [.], ack 1, win 251, options [nop,nop,TS val 5557640 ecr 5553040], length 0
+
+16:47:33.644607 IP 10.0.0.129.9999 > 10.0.0.128.54100: Flags [P.], seq 1:6, ack 1, win 227, options [nop,nop,TS val 5553041 ecr 5557640], length 5
+16:47:33.644620 IP 10.0.0.128.54100 > 10.0.0.129.9999: Flags [.], ack 6, win 251, options [nop,nop,TS val 5557640 ecr 5553041], length 0
+16:47:33.645010 IP 10.0.0.128.54100 > 10.0.0.129.9999: Flags [P.], seq 1:4, ack 6, win 251, options [nop,nop,TS val 5557641 ecr 5553041], length 3
+16:47:33.645112 IP 10.0.0.129.9999 > 10.0.0.128.54100: Flags [.], ack 4, win 227, options [nop,nop,TS val 5553041 ecr 5557641], length 0
+
+16:47:33.645181 IP 10.0.0.129.9999 > 10.0.0.128.54100: Flags [P.], seq 6:14487, ack 4, win 227, options [nop,nop,TS val 5553041 ecr 5557641], length 14481
+16:47:33.645246 IP 10.0.0.128.54100 > 10.0.0.129.9999: Flags [.], ack 14487, win 478, options [nop,nop,TS val 5557641 ecr 5553041], length 0
+
+16:47:33.645373 IP 10.0.0.128.54100 > 10.0.0.129.9999: Flags [F.], seq 4, ack 14487, win 478, options [nop,nop,TS val 5557641 ecr 5553041], length 0
+16:47:33.645532 IP 10.0.0.129.9999 > 10.0.0.128.54100: Flags [F.], seq 14487, ack 5, win 227, options [nop,nop,TS val 5553042 ecr 5557641], length 0
+16:47:33.645542 IP 10.0.0.128.54100 > 10.0.0.129.9999: Flags [.], ack 14488, win 478, options [nop,nop,TS val 5557641 ecr 5553042], length 0
+
+
